@@ -223,7 +223,9 @@ contract SentinelList4337Test is Test {
 
         list.popAll(account);
 
-        assertEq(list.getNext(account, SENTINEL), SENTINEL);
+        // the result of this one, and the one above, not being the same is weird.
+        // it still works, but it needs more null/nil checks, and is more error prone.
+        assertEq(list.getNext(account, SENTINEL), ZERO_ADDRESS);
     }
 
     // this test is similar to the one above, but instead we don't popAll
@@ -244,7 +246,7 @@ contract SentinelList4337Test is Test {
 
         list.popAll(account);
 
-        assertEq(list.getNext(account, SENTINEL), SENTINEL);
+        assertEq(list.getNext(account, SENTINEL), ZERO_ADDRESS);
     }
 
     // similar to the previous test, but we do a popAll first on an empty list
@@ -256,7 +258,7 @@ contract SentinelList4337Test is Test {
         (address[] memory array,) = list.getEntriesPaginated(account, SENTINEL, 32);
 
         assertEq(array.length, 0);
-        assertEq(list.getNext(account, SENTINEL), SENTINEL);
+        assertEq(list.getNext(account, SENTINEL), ZERO_ADDRESS);
 
         list.push(account, one);
         list.push(account, two);
@@ -275,7 +277,7 @@ contract SentinelList4337Test is Test {
 
         list.popAll(account);
 
-        assertEq(list.getNext(account, SENTINEL), SENTINEL);
+        assertEq(list.getNext(account, SENTINEL), ZERO_ADDRESS);
 
         list.push(account, one);
         list.push(account, two);
@@ -284,7 +286,7 @@ contract SentinelList4337Test is Test {
         assertEq(list.getNext(account, SENTINEL), three);
         assertEq(list.getNext(account, three), two);
         assertEq(list.getNext(account, two), one);
-        assertEq(list.getNext(account, one), SENTINEL);
+        assertEq(list.getNext(account, one), ZERO_ADDRESS);
 
         list.popAll(account);
 
@@ -292,7 +294,7 @@ contract SentinelList4337Test is Test {
 
         // * we've just called popAll, the list should be empty and sentinel in its init state
         assertEq(array.length, 0);
-        assertEq(list.getNext(account, SENTINEL), SENTINEL);
+        assertEq(list.getNext(account, SENTINEL), ZERO_ADDRESS);
 
         list.push(account, three);
         list.push(account, two);
@@ -301,7 +303,7 @@ contract SentinelList4337Test is Test {
         assertEq(list.getNext(account, SENTINEL), one);
         assertEq(list.getNext(account, one), two);
         assertEq(list.getNext(account, two), three);
-        assertEq(list.getNext(account, three), SENTINEL);
+        assertEq(list.getNext(account, three), ZERO_ADDRESS);
 
         (array,) = list.getEntriesPaginated(account, SENTINEL, 32);
 
@@ -332,7 +334,7 @@ contract SentinelList4337Test is Test {
         assertEq(list.getNext(account, SENTINEL), three);
         assertEq(list.getNext(account, three), two);
         assertEq(list.getNext(account, two), one);
-        assertEq(list.getNext(account, one), SENTINEL);
+        assertEq(list.getNext(account, one), ZERO_ADDRESS);
 
         (address[] memory array,) = list.getEntriesPaginated(account, SENTINEL, 32);
 
@@ -347,7 +349,7 @@ contract SentinelList4337Test is Test {
         addMany(amount);
         list.popAll(account);
 
-        assertEq(list.getNext(account, SENTINEL), SENTINEL);
+        assertEq(list.getNext(account, SENTINEL), ZERO_ADDRESS);
     }
 
     function test_ContainsWhenEntryIsSentinel() external {
