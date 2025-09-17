@@ -196,7 +196,12 @@ contract SentinelList4337Test is Test {
         assertEq(next, SENTINEL);
     }
 
-    function test_PopAllShouldRemoveAllEntries() external {
+    address one = 0x0000000000000000000000000000000000000002;
+    address two = 0x0000000000000000000000000000000000000003;
+    address three = 0x0000000000000000000000000000000000000004;
+
+
+    function test_PopAll_PopAllShouldRemoveAllEntries() external {
         // it should remove all entries
         uint256 amount = 8;
         addMany(amount);
@@ -205,16 +210,219 @@ contract SentinelList4337Test is Test {
         for (uint256 i = 1; i <= amount; i++) {
             assertFalse(list.contains(account, makeAddr(vm.toString(i))));
         }
+
+        (address[] memory array,) = list.getEntriesPaginated(account, SENTINEL, amount);
+        assertEq(array.length, 0);
     }
 
-    function test_PopAllShouldSetSentinelToZero() external {
+    // start by testing the popAll on an empty list. Calling popAll on an empty list
+    // should set the sentinel back to its init state (one node with a circular reference to itself)
+    // a method like popAll should be idempotent 100% of the time.
+    function test_PopAll_PopAllOnEmptyListVerifyNextValues() external {
+        // after init, the sentinel points to itself
+        assertEq(list.getNext(account, SENTINEL), SENTINEL);
+
+        list.popAll(account);
+
+        // assertEq(list.getNext(account, SENTINEL), SENTINEL); // EXPECTED
+        assertEq(list.getNext(account, SENTINEL), ZERO_ADDRESS); // ACTUAL
+    }
+
+    // this test is similar to the one above, but instead we don't popAll
+    // on an empty list but rather a list with a few elements in it.
+    function test_PopAll_PushThreeAndPopAllVerifyNextValues() external {
+        // after init, the sentinel points to itself. This is correct behaviour.
+        assertEq(list.getNext(account, SENTINEL), SENTINEL);
+
+        list.push(account, one);
+        list.push(account, two);
+        list.push(account, three);
+
+        // This is all correct. The sentinel node points to three, and "one" points to sentinel.
+        assertEq(list.getNext(account, SENTINEL), three);
+        assertEq(list.getNext(account, three), two);
+        assertEq(list.getNext(account, two), one);
+        assertEq(list.getNext(account, one), SENTINEL);
+
+        list.popAll(account);
+
+        // assertEq(list.getNext(account, SENTINEL), SENTINEL); // EXPECTED
+        assertEq(list.getNext(account, SENTINEL), ZERO_ADDRESS); // ACTUAL
+    }
+
+    // similar to the previous test, but we do a popAll first on an empty list
+    // and then push three elements to the list. We verify that the behaviour is
+    // the same as above: the list ends up with a sentinel node that points to itself
+    function test_PopAll_PopAllPushThreeAndVerifyNextValues() external {
+        list.popAll(account);
+
+        list.push(account, one);
+        list.push(account, two);
+        list.push(account, three);
+
+        assertEq(list.getNext(account, SENTINEL), three);
+        assertEq(list.getNext(account, three), two);
+        assertEq(list.getNext(account, two), one);
+        // assertEq(list.getNext(account, SENTINEL), SENTINEL); // EXPECTED
+        assertEq(list.getNext(account, SENTINEL), three); // ACTUAL (sentinel node is no longer part of the circle!)
+    }
+
+    function test_PopAll_PopAllOnEmptyListCreatesSomeBullshit() external {
+        assertEq(list.getNext(account, SENTINEL), SENTINEL);
+
+        list.popAll(account);
+
+        // assertEq(list.getNext(account, SENTINEL), SENTINEL); // failing - points to zero address
+
+        list.push(account, one);
+        list.push(account, two);
+        list.push(account, three);
+
+        assertEq(list.getNext(account, SENTINEL), three);
+        assertEq(list.getNext(account, three), two);
+        assertEq(list.getNext(account, two), one);
+        // assertEq(list.getNext(account, one), SENTINEL); // EXPECTED
+        assertEq(list.getNext(account, one), ZERO_ADDRESS); // ACTUAL
+
+        list.popAll(account);
+
+        (address[] memory array,) = list.getEntriesPaginated(account, SENTINEL, 32);
+
+        // assertEq(array.length, 0); // EXPECTED
+        assertEq(array.length, 1); // ACTUAL - should be 0
+
+        // ---- EXPECTED ---- //
+        // * we've just called popAll, list should be empty and sentinel in its init state
+        // assertEq(list.getNext(account, SENTINEL), SENTINEL);
+
+        // ---- ACTUAL ---- //
+        assertEq(list.getNext(account, SENTINEL), three);
+        assertEq(list.getNext(account, three), ZERO_ADDRESS);
+        assertEq(list.getNext(account, two), ZERO_ADDRESS);
+        assertEq(list.getNext(account, one), ZERO_ADDRESS);
+
+        // So what's going on here at this point?
+        // * we've just called popAll, yet the list still has a length of 1
+        // * the sentinel node is pointing to "three", instead of itself as it should be
+        // * "three" is pointing to ZERO_ADDRESS
+
+        list.push(account, three);
+        list.push(account, two);
+        list.push(account, one);
+
+        // ---- EXPECTED ---- //
+        assertEq(list.getNext(account, SENTINEL), one);
+        assertEq(list.getNext(account, one), two);
+        assertEq(list.getNext(account, two), three);
+        // assertEq(list.getNext(account, three), SENTINEL); // EXPECTED
+        assertEq(list.getNext(account, three), three); // ACTUAL
+
+        // ---> https://youtu.be/pkKNasQXVV0?si=ticRI6-CHoxaHIwS
+        // * "three" is pointing to itself (circular reference)
+        // * it has acquired the properties of a sentinel node in an empty list
+
+        (array,) = list.getEntriesPaginated(account, SENTINEL, 32);
+
+        // assertEq(array.length, 3); // EXPECTED
+        assertEq(array.length, 32); // ACTUAL
+
+        // * `getEntriesPaginated` goes into a loop due to the circular reference of "three".
+        // * It short circuits when it reaches the page size.
+
+        for (uint256 i = 0; i < array.length; i++) {
+            console2.log(array[i]);
+            if (i == 0) assertEq(array[i], one);
+            else if (i == 1) assertEq(array[i], two);
+            else assertEq(array[i], three);
+
+            // Log output (32 lines):
+            // 0x0000000000000000000000000000000000000002
+            // 0x0000000000000000000000000000000000000003
+            // 0x0000000000000000000000000000000000000004
+            // 0x0000000000000000000000000000000000000004
+            // 0x0000000000000000000000000000000000000004
+            // 0x0000000000000000000000000000000000000004
+            // 0x0000000000000000000000000000000000000004
+            // address(4) 26 more times...
+        }
+    }
+
+    function test_PopAll_PopAllOnEmptyListCreatesSomeMoreBullshit() external {
+        list.popAll(account);
+
+        list.push(account, one);
+        list.push(account, two);
+        list.push(account, three);
+
+        list.popAll(account);
+
+        list.push(account, one);
+        list.push(account, two);
+        list.push(account, three);
+
+        // by changing the insertion order compared to the previous test,
+        // we now get a circular reference between two elements in the list
+        // the previous test had a circular reference within the same element
+
+        // ---- EXPECTED ---- //
+        // assertEq(list.getNext(account, SENTINEL), three);
+        // assertEq(list.getNext(account, one), two);
+        // assertEq(list.getNext(account, two), one);
+        // assertEq(list.getNext(account, three), SENTINEL);
+
+        // ---- ACTUAL ---- //
+        assertEq(list.getNext(account, SENTINEL), three);
+        assertEq(list.getNext(account, three), two);
+        assertEq(list.getNext(account, two), one);
+        assertEq(list.getNext(account, one), three);
+        // * "one" points back to "three"
+        // * "three" has become the new sentinel node, but ofc the imlementation doesn't understand
+        // that
+        // * there is no longer any element pointing to the actual sentinel node, so the code has no
+        // idea when to terminate
+        // * `getEntriesPaginated` will go into a loop finally short circuits when it reaches the
+        // page size.
+
+        //     two ------> one
+        //      ^        /
+        //      |      /
+        //      |    /
+        //      |  v
+        //     three <----- [SENTINEL]
+
+        (address[] memory array,) = list.getEntriesPaginated(account, SENTINEL, 32);
+
+        // assertEq(array.length, 3); // EXPECTED
+        assertEq(array.length, 32); // ACTUAL
+
+        for (uint256 i = 0; i < array.length; i++) {
+            console2.log(array[i]);
+
+            // (these numbers refer to the indexes at which the corresponding element is found in
+            // the list)
+            // 0, 3, 6
+            // 1, 4, 7
+            // 2, 5, 8
+            if (i % 3 == 0) assertEq(array[i], three);
+            else if (i % 3 == 1) assertEq(array[i], two);
+            else assertEq(array[i], one);
+
+            // Log output (32 lines):
+            // 0x0000000000000000000000000000000000000004
+            // 0x0000000000000000000000000000000000000003
+            // 0x0000000000000000000000000000000000000002
+            // ... those three lines on a loopy loop...
+        }
+    }
+
+    function test_PopAll_PopAllShouldSetSentinelToInitState() external {
         // it should set sentinel to zero
         uint256 amount = 8;
         addMany(amount);
         list.popAll(account);
 
-        address next = list.getNext(account, SENTINEL);
-        assertEq(next, ZERO_ADDRESS);
+        // assertEq(list.getNext(account, SENTINEL), SENTINEL); // EXPECTED
+        assertEq(list.getNext(account, SENTINEL), ZERO_ADDRESS); // ACTUAL
     }
 
     function test_ContainsWhenEntryIsSentinel() external {
