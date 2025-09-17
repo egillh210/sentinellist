@@ -150,6 +150,7 @@ library SentinelList4337Lib {
             next = self.entries[next][account];
             self.entries[current][account] = ZERO_ADDRESS;
         }
+        self.entries[SENTINEL][account] = SENTINEL;
     }
 
     /**
@@ -204,7 +205,7 @@ library SentinelList4337Lib {
         // Populate return array
         uint256 entryCount = 0;
         next = self.entries[start][account];
-        while (next != ZERO_ADDRESS && next != SENTINEL && entryCount < pageSize) {
+        while (next != SENTINEL && entryCount < pageSize) {
             array[entryCount] = next;
             next = self.entries[next][account];
             entryCount++;
