@@ -196,7 +196,11 @@ contract SentinelList4337Test is Test {
         assertEq(next, SENTINEL);
     }
 
-    function test_PopAllShouldRemoveAllEntries() external {
+    address one = 0x0000000000000000000000000000000000000002;
+    address two = 0x0000000000000000000000000000000000000003;
+    address three = 0x0000000000000000000000000000000000000004;
+
+    function test_PopAll_PopAllShouldRemoveAllEntries() external {
         // it should remove all entries
         uint256 amount = 8;
         addMany(amount);
@@ -205,16 +209,145 @@ contract SentinelList4337Test is Test {
         for (uint256 i = 1; i <= amount; i++) {
             assertFalse(list.contains(account, makeAddr(vm.toString(i))));
         }
+
+        (address[] memory array,) = list.getEntriesPaginated(account, SENTINEL, amount);
+        assertEq(array.length, 0);
     }
 
-    function test_PopAllShouldSetSentinelToZero() external {
-        // it should set sentinel to zero
+    // start by testing the popAll on an empty list. Calling popAll on an empty list
+    // should set the sentinel back to its init state (one node with a circular reference to itself)
+    // a method like popAll should be idempotent 100% of the time.
+    function test_PopAll_PopAllOnEmptyListVerifyNextValues() external {
+        // after init, the sentinel points to itself
+        assertEq(list.getNext(account, SENTINEL), SENTINEL);
+
+        list.popAll(account);
+
+        assertEq(list.getNext(account, SENTINEL), SENTINEL);
+    }
+
+    // this test is similar to the one above, but instead we don't popAll
+    // on an empty list but rather a list with a few elements in it.
+    function test_PopAll_PushThreeAndPopAllVerifyNextValues() external {
+        // after init, the sentinel points to itself. This is correct behaviour.
+        assertEq(list.getNext(account, SENTINEL), SENTINEL);
+
+        list.push(account, one);
+        list.push(account, two);
+        list.push(account, three);
+
+        // This is all correct. The sentinel node points to three, and "one" points to sentinel.
+        assertEq(list.getNext(account, SENTINEL), three);
+        assertEq(list.getNext(account, three), two);
+        assertEq(list.getNext(account, two), one);
+        assertEq(list.getNext(account, one), SENTINEL);
+
+        list.popAll(account);
+
+        assertEq(list.getNext(account, SENTINEL), SENTINEL);
+    }
+
+    // similar to the previous test, but we do a popAll first on an empty list
+    // and then push three elements to the list. We verify that the behaviour is
+    // the same as above: the list ends up with a sentinel node that points to itself
+    function test_PopAll_PopAllPushThreeAndVerifyNextValues() external {
+        list.popAll(account);
+
+        (address[] memory array,) = list.getEntriesPaginated(account, SENTINEL, 32);
+
+        assertEq(array.length, 0);
+        assertEq(list.getNext(account, SENTINEL), SENTINEL);
+
+        list.push(account, one);
+        list.push(account, two);
+        list.push(account, three);
+
+        (array,) = list.getEntriesPaginated(account, SENTINEL, 32);
+
+        assertEq(list.getNext(account, SENTINEL), three);
+        assertEq(list.getNext(account, three), two);
+        assertEq(list.getNext(account, two), one);
+        assertEq(list.getNext(account, SENTINEL), three);
+    }
+
+    function test_PopAll_PopAllOnEmptyListCreatesSomeBullshit() external {
+        assertEq(list.getNext(account, SENTINEL), SENTINEL);
+
+        list.popAll(account);
+
+        assertEq(list.getNext(account, SENTINEL), SENTINEL);
+
+        list.push(account, one);
+        list.push(account, two);
+        list.push(account, three);
+
+        assertEq(list.getNext(account, SENTINEL), three);
+        assertEq(list.getNext(account, three), two);
+        assertEq(list.getNext(account, two), one);
+        assertEq(list.getNext(account, one), SENTINEL);
+
+        list.popAll(account);
+
+        (address[] memory array,) = list.getEntriesPaginated(account, SENTINEL, 32);
+
+        // * we've just called popAll, the list should be empty and sentinel in its init state
+        assertEq(array.length, 0);
+        assertEq(list.getNext(account, SENTINEL), SENTINEL);
+
+        list.push(account, three);
+        list.push(account, two);
+        list.push(account, one);
+
+        assertEq(list.getNext(account, SENTINEL), one);
+        assertEq(list.getNext(account, one), two);
+        assertEq(list.getNext(account, two), three);
+        assertEq(list.getNext(account, three), SENTINEL);
+
+        (array,) = list.getEntriesPaginated(account, SENTINEL, 32);
+
+        assertEq(array.length, 3);
+        // reverse insertion order!
+        assertEq(array[0], one);
+        assertEq(array[1], two);
+        assertEq(array[2], three);
+    }
+
+    // this test is different from the one above in that it changes the insertion order on the list
+    // if the list is in a corrupted state, it matters what is the next element you insert after
+    // that
+
+    function test_PopAll_PopAllOnEmptyListCreatesSomeMoreBullshit() external {
+        list.popAll(account);
+
+        list.push(account, one);
+        list.push(account, two);
+        list.push(account, three);
+
+        list.popAll(account);
+
+        list.push(account, one);
+        list.push(account, two);
+        list.push(account, three);
+
+        assertEq(list.getNext(account, SENTINEL), three);
+        assertEq(list.getNext(account, three), two);
+        assertEq(list.getNext(account, two), one);
+        assertEq(list.getNext(account, one), SENTINEL);
+
+        (address[] memory array,) = list.getEntriesPaginated(account, SENTINEL, 32);
+
+        assertEq(array.length, 3);
+        assertEq(array[0], three);
+        assertEq(array[1], two);
+        assertEq(array[2], one);
+    }
+
+    function test_PopAll_PopAllShouldSetSentinelToInitState() external {
         uint256 amount = 8;
         addMany(amount);
         list.popAll(account);
 
-        address next = list.getNext(account, SENTINEL);
-        assertEq(next, ZERO_ADDRESS);
+        assertEq(list.getNext(account, SENTINEL), SENTINEL);
     }
 
     function test_ContainsWhenEntryIsSentinel() external {
